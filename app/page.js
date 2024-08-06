@@ -1,107 +1,69 @@
 'use client'
 
 import { useState, useEffect } from 'react';
-import { Box, Stack, Typography, Button, Modal, TextField } from '@mui/material';
+import { Box, Stack, Typography, Button, Modal, TextField, Select, MenuItem, FormControl, InputLabel } from '@mui/material';
 import { firestore } from './firebase/config';
-import {
-  collection,
-  doc,
-  getDocs,
-  query,
-  setDoc,
-  deleteDoc,
-  getDoc,
-} from 'firebase/firestore';
-
-const style = {
-  position: 'absolute',
-  top: '50%',
-  left: '50%',
-  transform: 'translate(-50%, -50%)',
-  width: 400,
-  bgcolor: 'white',
-  border: '2px solid #000',
-  boxShadow: 24,
-  p: 4,
-  display: 'flex',
-  flexDirection: 'column',
-  gap: 3,
-};
+import { collection, doc, getDocs, query, setDoc, deleteDoc, getDoc } from 'firebase/firestore';
 
 export default function Home() {
-
   const [inventory, setInventory] = useState([]);
   const [open, setOpen] = useState(false);
   const [itemName, setItemName] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [showLowQuantity, setShowLowQuantity] = useState(false);
+  const [sortOption, setSortOption] = useState('alphabetical');
+
+  useEffect(() => {
+    const fetchData = async () => {
+      const snapshot = await getDocs(query(collection(firestore, 'inventory')));
+      const inventoryList = snapshot.docs.map(doc => ({ name: doc.id, ...doc.data() }));
+      setInventory(sortInventory(inventoryList));
+    };
+    fetchData();
+  }, [sortOption]);
+
+  const sortInventory = (inventoryList) => {
+    return inventoryList.sort((a, b) => sortOption === 'alphabetical'
+      ? a.name.localeCompare(b.name)
+      : a.quantity - b.quantity || a.name.localeCompare(b.name));
+  };
 
   const updateInventory = async () => {
-    const snapshot = query(collection(firestore, 'inventory'));
-    const docs = await getDocs(snapshot)
-    const inventoryList = []
-    docs.forEach((doc) => {
-      inventoryList.push({ name: doc.id, ...doc.data() })
-    })
-    setInventory(inventoryList)
-  }
-  
-  useEffect(() => {
-    updateInventory()
-  }, [])
+    const snapshot = await getDocs(query(collection(firestore, 'inventory')));
+    const inventoryList = snapshot.docs.map(doc => ({ name: doc.id, ...doc.data() }));
+    setInventory(sortInventory(inventoryList));
+  };
 
-  const addItem = async (item) => {
-    const docRef = doc(collection(firestore, 'inventory'), item)
-    const docSnap = await getDoc(docRef)
+  const handleItem = async (item, action) => {
+    const docRef = doc(collection(firestore, 'inventory'), item);
+    const docSnap = await getDoc(docRef);
     if (docSnap.exists()) {
-      const { quantity } = docSnap.data()
-      await setDoc(docRef, { quantity: quantity + 1 })
-    } else {
-      await setDoc(docRef, { quantity: 1 })
-    }
-    await updateInventory()
-  }
-  
-  const removeItem = async (item) => {
-    const docRef = doc(collection(firestore, 'inventory'), item)
-    const docSnap = await getDoc(docRef)
-    if (docSnap.exists()) {
-      const { quantity } = docSnap.data()
-      if (quantity === 1) {
-        await deleteDoc(docRef)
-      } else {
-        await setDoc(docRef, { quantity: quantity - 1 })
+      const { quantity } = docSnap.data();
+      if (action === 'add') {
+        await setDoc(docRef, { quantity: quantity + 1 });
+      } else if (action === 'remove') {
+        if (quantity === 1) {
+          await deleteDoc(docRef);
+        } else {
+          await setDoc(docRef, { quantity: quantity - 1 });
+        }
       }
+    } else if (action === 'add') {
+      await setDoc(docRef, { quantity: 1 });
     }
-    await updateInventory()
-  }
+    updateInventory();
+  };
 
-  const handleOpen = () => setOpen(true)
-  const handleClose = () => setOpen(false)
+  const filteredInventory = inventory
+    .filter(item => showLowQuantity ? item.quantity === 1 : true)
+    .filter(item => item.name.toLowerCase().includes(searchQuery.toLowerCase()));
 
-
-
-
-  // We'll add our component logic here
   return (
-    <Box
-      width="100vw"
-      height="100vh"
-      display={'flex'}
-      justifyContent={'center'}
-      flexDirection={'column'}
-      alignItems={'center'}
-      gap={2}
-    >
-      <Modal
-        open={open}
-        onClose={handleClose}
-        aria-labelledby="modal-modal-title"
-        aria-describedby="modal-modal-description"
-      >
-        <Box sx={style}>
-          <Typography id="modal-modal-title" variant="h6" component="h2">
-            Add Item
-          </Typography>
-          <Stack width="100%" direction={'row'} spacing={2}>
+    <div className="min-h-screen flex flex-col items-center justify-center bg-gray-900 text-white p-4">
+      <Modal open={open} onClose={() => setOpen(false)} aria-labelledby="modal-modal-title" aria-describedby="modal-modal-description">
+        <div className="bg-gray-800 p-6 rounded-lg shadow-xl w-96 mx-auto">
+          <h2 className="text-2xl mb-5">Add Item</h2>
+          <div className="flex space-x-2">
             <TextField
               id="outlined-basic"
               label="Item"
@@ -109,61 +71,74 @@ export default function Home() {
               fullWidth
               value={itemName}
               onChange={(e) => setItemName(e.target.value)}
-            />
-            <Button
-              variant="outlined"
-              onClick={() => {
-                addItem(itemName)
-                setItemName('')
-                handleClose()
+              InputProps={{
+                style: { color: 'white' }
               }}
-            >
+              className="bg-gray-700 text-white rounded"
+            />
+            <Button variant="outlined" onClick={() => { handleItem(itemName, 'add'); setItemName(''); setOpen(false); }} className="bg-indigo-600 text-white hover:bg-indigo-500">
               Add
             </Button>
-          </Stack>
-        </Box>
+          </div>
+        </div>
       </Modal>
-      <Button variant="contained" onClick={handleOpen}>
-        Add New Item
-      </Button>
-      <Box border={'1px solid #333'}>
-        <Box
-          width="800px"
-          height="100px"
-          bgcolor={'#ADD8E6'}
-          display={'flex'}
-          justifyContent={'center'}
-          alignItems={'center'}
-        >
-          <Typography variant={'h2'} color={'#333'} textAlign={'center'}>
-            Inventory Items
-          </Typography>
-        </Box>
-        <Stack width="800px" height="300px" spacing={2} overflow={'auto'}>
-          {inventory.map(({name, quantity}) => (
-            <Box
-              key={name}
-              width="100%"
-              minHeight="150px"
-              display={'flex'}
-              justifyContent={'space-between'}
-              alignItems={'center'}
-              bgcolor={'#f0f0f0'}
-              paddingX={5}
-            >
-              <Typography variant={'h3'} color={'#333'} textAlign={'center'}>
-                {name.charAt(0).toUpperCase() + name.slice(1)}
-              </Typography>
-              <Typography variant={'h3'} color={'#333'} textAlign={'center'}>
-                Quantity: {quantity}
-              </Typography>
-              <Button variant="contained" onClick={() => removeItem(name)}>
+      <div className="flex space-x-2 mb-4">
+        <Button variant="contained" onClick={() => setOpen(true)} className="bg-indigo-600 text-white hover:bg-indigo-500">
+          Add New Item
+        </Button>
+        <Button variant="contained" onClick={() => setShowLowQuantity(!showLowQuantity)} className="bg-indigo-600 text-white hover:bg-indigo-500">
+          {showLowQuantity ? 'Show All Items' : 'Show Low Quantity Items'}
+        </Button>
+        <FormControl variant="outlined" className="rounded bg-indigo-600">
+          <InputLabel className="text-white">Sort Options</InputLabel>
+          <Select
+            value={sortOption}
+            onChange={(e) => setSortOption(e.target.value)}
+            label="Sort Options"
+            className="bg-indigo-600 text-white"
+            MenuProps={{
+              PaperProps: {
+                sx: {
+                  bgcolor: '#5a67d8',
+                  '& .MuiMenuItem-root': {
+                    color: 'white',
+                  },
+                },
+              },
+            }}
+          >
+            <MenuItem value="alphabetical">Sort Alphabetically</MenuItem>
+            <MenuItem value="quantity">Sort by Quantity</MenuItem>
+          </Select>
+        </FormControl>
+        <TextField
+          id="search-bar"
+          label="Search"
+          variant="outlined"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          InputProps={{
+            style: { color: 'white' }
+          }}
+          className="bg-gray-700 text-white rounded"
+        />
+      </div>
+      <div className="bg-gray-800 p-4 rounded-lg shadow-xl w-full max-w-4xl">
+        <div className="bg-gray-700 p-4 rounded-t-lg">
+          <h2 className="text-center text-xl">Inventory Items</h2>
+        </div>
+        <div className="space-y-2 p-2 max-h-96 overflow-auto">
+          {filteredInventory.map(({ name, quantity }) => (
+            <div key={name} className="grid grid-cols-3 gap-4 p-4 bg-gray-700 rounded shadow">
+              <span className="text-lg">{name.charAt(0).toUpperCase() + name.slice(1)}</span>
+              <span className="text-lg">Quantity: {quantity}</span>
+              <Button variant="contained" onClick={() => handleItem(name, 'remove')} className="bg-red-600 text-white hover:bg-red-500">
                 Remove
               </Button>
-            </Box>
+            </div>
           ))}
-        </Stack>
-      </Box>
-    </Box>
-  )
+        </div>
+      </div>
+    </div>
+  );
 }
