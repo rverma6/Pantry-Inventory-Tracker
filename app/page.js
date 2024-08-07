@@ -1,9 +1,11 @@
 'use client'
 
 import { useState, useEffect } from 'react';
-import { Box, Stack, Typography, Button, Modal, TextField, Select, MenuItem, FormControl, InputLabel } from '@mui/material';
+import { Box, Grid, Typography, Button, Modal, TextField, Select, MenuItem, FormControl, InputLabel } from '@mui/material';
 import { firestore } from './firebase/config';
 import { collection, doc, getDocs, query, setDoc, deleteDoc, getDoc } from 'firebase/firestore';
+import { getRecipes } from './api';
+import RecipeCard from './components/RecipeCard';
 
 export default function Home() {
   const [inventory, setInventory] = useState([]);
@@ -16,12 +18,17 @@ export default function Home() {
   const [searchQuery, setSearchQuery] = useState('');
   const [showLowQuantity, setShowLowQuantity] = useState(false);
   const [sortOption, setSortOption] = useState('alphabetical');
+  const [selectedIngredients, setSelectedIngredients] = useState([]);
+  const [recipes, setRecipes] = useState([]);
+  const [showRecipes, setShowRecipes] = useState(false); // State for managing recipe visibility
+
 
   useEffect(() => {
     const fetchData = async () => {
       const snapshot = await getDocs(query(collection(firestore, 'inventory')));
       const inventoryList = snapshot.docs.map(doc => ({ name: doc.id, ...doc.data() }));
       setInventory(sortInventory(inventoryList));
+      setSelectedIngredients(inventoryList.filter(item => item.quantity > 0).map(item => item.name));
     };
     fetchData();
   }, [sortOption]);
@@ -30,6 +37,10 @@ export default function Home() {
     return inventoryList.sort((a, b) => sortOption === 'alphabetical'
       ? a.name.localeCompare(b.name)
       : a.quantity - b.quantity || a.name.localeCompare(b.name));
+  };
+
+  const toggleShowRecipes = () => {
+    setShowRecipes(!showRecipes);
   };
 
   const updateInventory = async () => {
@@ -60,6 +71,7 @@ export default function Home() {
       await setDoc(docRef, { quantity: quantity });
     }
     updateInventory();
+    fetchRecipes();
   };
 
   const handleUpdateItem = async () => {
@@ -72,6 +84,11 @@ export default function Home() {
     }
   };
 
+  const fetchRecipes = async () => {
+    const recipesData = await getRecipes(selectedIngredients);
+    setRecipes(recipesData);
+  }
+
   const filteredInventory = inventory
     .filter(item => showLowQuantity ? item.quantity === 1 : true)
     .filter(item => item.name.toLowerCase().includes(searchQuery.toLowerCase()));
@@ -83,7 +100,8 @@ export default function Home() {
           <h2 className="text-2xl mb-5">Add Item</h2>
           <div className="flex flex-col space-y-2">
             <TextField
-              id="outlined-basic"
+              id="item-name"
+              name="item-name"
               label="Item"
               variant="outlined"
               fullWidth
@@ -95,7 +113,8 @@ export default function Home() {
               className="bg-gray-700 text-white rounded"
             />
             <TextField
-              id="outlined-basic-quantity"
+              id="item-quantity"
+              name="item-quantity"
               label="Quantity"
               variant="outlined"
               type="number"
@@ -120,7 +139,8 @@ export default function Home() {
           <div className="flex flex-col space-y-2">
             <Typography variant="h6" className="text-white">Item: {selectedItem?.name}</Typography>
             <TextField
-              id="outlined-basic-new-quantity"
+              id="new-quantity"
+              name="new-quantity"
               label="New Quantity"
               variant="outlined"
               type="number"
@@ -147,8 +167,9 @@ export default function Home() {
           {showLowQuantity ? 'Show All Items' : 'Show Low Quantity Items'}
         </Button>
         <FormControl variant="outlined" className="rounded bg-indigo-600">
-          <InputLabel className="text-white">Sort Options</InputLabel>
+          <InputLabel htmlFor="sort-options" className="text-white">Sort Options</InputLabel>
           <Select
+            id="sort-options"
             value={sortOption}
             onChange={(e) => setSortOption(e.target.value)}
             label="Sort Options"
@@ -162,6 +183,9 @@ export default function Home() {
                   },
                 },
               },
+            }} 
+            inputProps={{
+              'aria-label': 'Sort Options',
             }}
           >
             <MenuItem value="alphabetical">Sort Alphabetically</MenuItem>
@@ -170,6 +194,7 @@ export default function Home() {
         </FormControl>
         <TextField
           id="search-bar"
+          name="search-bar"
           label="Search"
           variant="outlined"
           value={searchQuery}
@@ -198,6 +223,20 @@ export default function Home() {
             </div>
           ))}
         </div>
+      </div>
+      <div className="mt-8" style={{ width: '100%', maxWidth: '1200px', margin: '0 auto' }}>
+      <Button variant="contained" onClick={toggleShowRecipes} className="bg-green-600 text-white hover:bg-green-500">
+        {showRecipes ? 'Hide Recipes' : 'Suggest Recipes'}
+      </Button>
+      {showRecipes && (
+        <Grid container spacing={3} className="mt-4" justifyContent="center">
+          {recipes.map(recipe => (
+            <Grid item xs={12} sm={6} md={4} key={recipe.id}>
+              <RecipeCard recipe={recipe} />
+            </Grid>
+          ))}
+        </Grid>
+      )}
       </div>
     </div>
   );
